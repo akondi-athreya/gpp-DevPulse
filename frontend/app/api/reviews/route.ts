@@ -5,6 +5,7 @@ import { redis } from "@/lib/redis";
 import { getUserFromSession } from "@/lib/auth";
 import { createReviewSchema } from "@/lib/validations";
 import { pusherServer } from "@/lib/pusher";
+import { revalidatePath } from "next/cache";
 
 // Named transaction helper as specified in the PRD
 async function createReviewTransaction(
@@ -164,8 +165,9 @@ export async function POST(req: NextRequest) {
     // 7. Caching Invalidation: Delete notification count cache for the author
     try {
       await redis.del(`notif:unread:${submission.authorId}`);
+      revalidatePath(`/review/${submissionId}`);
     } catch (cacheErr) {
-      console.error("Cache invalidation failed:", cacheErr);
+      console.error("Cache invalidation/revalidation failed:", cacheErr);
     }
 
     // 8. Trigger real-time notifications via Pusher
@@ -301,6 +303,7 @@ export async function PATCH(req: NextRequest) {
           "new-notification",
           notification
         );
+        revalidatePath(`/review/${review.submission.id}`);
       } catch (e) {
         console.error(e);
       }
