@@ -7,20 +7,14 @@ import { SubmissionStatus, DifficultyTag, VoteType } from "@/app/generated/prism
 import { z } from "zod";
 import crypto from "crypto";
 
-const createSubmissionSchema = z.object({
-    title: z.string().min(1, "Title is required"),
-    description: z.string().min(1, "Description is required"),
-    codeContent: z.string().min(1, "Code content is required"),
-    language: z.string().min(1, "Language is required"),
-    difficultyTag: z.enum(["BEGINNER", "INTERMEDIATE", "ADVANCED", "EXPERT"]),
-    tags: z.array(z.string()).optional(),
-});
+import { createSubmissionSchema } from "@/lib/validations";
 
 export async function GET(req: NextRequest) {
     const searchParams = req.nextUrl.searchParams;
 
     // 1. Authenticate user to populate userVote later
     const sessionUser = await getUserFromSession(req);
+    const authenticatedUserId = sessionUser?.id || null;
     // 2. Build Cache Key
     // Sort query params and hash them
     const sortedParams: Array<[string, string]> = [];
@@ -220,7 +214,7 @@ export async function GET(req: NextRequest) {
         return NextResponse.json(responseBody);
     } catch (dbError) {
         console.error("Database query failed:", dbError);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return NextResponse.json({ error: "Internal Server Error", code: "internal_server_error" }, { status: 500 });
     }
 }
 
@@ -228,7 +222,7 @@ export async function POST(req: NextRequest) {
     // 1. Authenticate user
     const sessionUser = await getUserFromSession(req);
     if (!sessionUser) {
-        return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+        return NextResponse.json({ error: "Authentication required", code: "unauthenticated" }, { status: 401 });
     }
 
     // 2. Parse and validate body
@@ -236,51 +230,43 @@ export async function POST(req: NextRequest) {
         const body = await req.json();
         const parsed = createSubmissionSchema.safeParse(body);
         if (!parsed.success) {
-            return NextResponse.json({ error: "validation_failed", details: parsed.error.flatten() }, { status: 400 });
+            return NextResponse.json({ error: "Validation failed", code: "validation_failed", details: parsed.error.flatten() }, { status: 400 });
         }
 
-        const { title, description, codeContent, language, difficultyTag, tags } = parsed.data;
+        const { title, description, codeContent, language, difficultyTag, tagIds } = parsed.data;
 
-        // 3. Find or Create Tags
-        const tagRecords = [];
-        if (tags && tags.length > 0) {
-            for (const tagName of tags) {
-                // Upsert the tag (using name as query)
-                const tag = await prisma.tag.upsert({
-                    where: { name: tagName },
-                    update: {},
-                    create: {
-                        name: tagName,
-                        color: "#" + Math.floor(Math.random() * 16777215).toString(16).padEnd(6, "0"),
-                    },
-                });
-                tagRecords.push(tag);
-            }
-        }
+        // 3. Create Submission and Increment reputation in a transaction
+        const newSubmission = await prisma.$transaction(async (tx) => {
+            // Increment the author's reputation by 5 points
+            await tx.user.update({
+                where: { id: sessionUser.id },
+                data: { reputation: { increment: 5 } },
+            });
 
-        // 4. Create Submission in DB
-        const newSubmission = await prisma.submission.create({
-            data: {
-                title,
-                description,
-                codeContent,
-                language,
-                difficultyTag,
-                authorId: sessionUser.id,
-                tags: {
-                    create: tagRecords.map((t) => ({
-                        tagId: t.id,
-                    })),
-                },
-            },
-            include: {
-                author: true,
-                tags: {
-                    include: {
-                        tag: true,
+            // Create the submission record and associate tags
+            return tx.submission.create({
+                data: {
+                    title,
+                    description,
+                    codeContent,
+                    language,
+                    difficultyTag,
+                    authorId: sessionUser.id,
+                    tags: {
+                        create: tagIds.map((tagId) => ({
+                            tagId,
+                        })),
                     },
                 },
-            },
+                include: {
+                    author: true,
+                    tags: {
+                        include: {
+                            tag: true,
+                        },
+                    },
+                },
+            });
         });
 
         // 5. Invalidate cache: Delete all keys matching cache:submissions:*
@@ -293,9 +279,35 @@ export async function POST(req: NextRequest) {
             console.error("Failed to invalidate cache:", cacheError);
         }
 
-        return NextResponse.json({ data: newSubmission }, { status: 201 });
+        const responseData = {
+            id: newSubmission.id,
+            title: newSubmission.title,
+            description: newSubmission.description,
+            codeContent: newSubmission.codeContent,
+            language: newSubmission.language,
+            status: newSubmission.status,
+            difficultyTag: newSubmission.difficultyTag,
+            viewCount: newSubmission.viewCount,
+            createdAt: newSubmission.createdAt.toISOString(),
+            updatedAt: newSubmission.updatedAt.toISOString(),
+            author: {
+                id: newSubmission.author.id,
+                username: newSubmission.author.username,
+                displayName: newSubmission.author.displayName,
+                avatarUrl: newSubmission.author.avatarUrl,
+                reputation: newSubmission.author.reputation,
+            },
+            tags: newSubmission.tags.map((st: any) => ({
+                id: st.tag.id,
+                name: st.tag.name,
+                color: st.tag.color,
+            })),
+            userVote: null,
+        };
+
+        return NextResponse.json({ data: responseData }, { status: 201 });
     } catch (error) {
         console.error("Submission creation failed:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return NextResponse.json({ error: "Internal Server Error", code: "internal_server_error" }, { status: 500 });
     }
 }
