@@ -151,7 +151,9 @@ export default async function FeedPage({ searchParams }: FeedPageProps) {
   });
 
   const initialData = {
-    submissions,
+    data: {
+      submissions,
+    },
     meta: {
       total,
       page,

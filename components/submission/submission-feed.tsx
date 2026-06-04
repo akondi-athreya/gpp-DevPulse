@@ -10,7 +10,9 @@ import { Filter, SlidersHorizontal, Loader2, ArrowUpDown } from "lucide-react";
 
 type SubmissionFeedProps = {
   initialData: {
-    submissions: any[];
+    data: {
+      submissions: any[];
+    };
     meta: {
       total: number;
       page: number;

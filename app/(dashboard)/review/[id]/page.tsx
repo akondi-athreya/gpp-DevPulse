@@ -14,12 +14,17 @@ type ReviewPageProps = {
 
 // 1. Pre-render the 20 most recent submissions at build time
 export async function generateStaticParams() {
-  const submissions = await prisma.submission.findMany({
-    orderBy: { createdAt: "desc" },
-    take: 20,
-    select: { id: true },
-  });
-  return submissions.map((sub) => ({ id: sub.id }));
+  try {
+    const submissions = await prisma.submission.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: { id: true },
+    });
+    return submissions.map((sub) => ({ id: sub.id }));
+  } catch (error) {
+    console.warn("Could not fetch submissions for generateStaticParams during build:", error);
+    return [];
+  }
 }
 
 // 2. Reviews Section wrapper for Suspense boundary streaming
