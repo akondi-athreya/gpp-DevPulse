@@ -10,7 +10,8 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas = ["public"]
+  url      = env("DATABASE_URL")
+  schemas  = ["public"]
 }
 
 
@@ -22,6 +23,7 @@ model User {
   avatarUrl     String?
   githubId      String?  @unique
   reputation    Int      @default(0)
+  password      String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
