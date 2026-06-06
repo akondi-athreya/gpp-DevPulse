@@ -36,9 +36,11 @@ export async function middleware(req: NextRequest) {
   );
 
   if (isProtected) {
+    const secureCookie = process.env.NODE_ENV === "production" || req.headers.get("x-forwarded-proto") === "https";
     const sessionToken = await getToken({
       req,
       secret: process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET,
+      secureCookie,
     });
     if (!sessionToken) {
       const loginUrl = new URL("/login", req.url);

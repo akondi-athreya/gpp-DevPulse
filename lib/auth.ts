@@ -215,7 +215,12 @@ export type SessionUser = {
 
 export async function getUserFromSession(req?: NextRequest): Promise<SessionUser | null> {
   if (req) {
-    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET });
+    const secureCookie = process.env.NODE_ENV === "production" || req.headers.get("x-forwarded-proto") === "https";
+    const token = await getToken({
+      req,
+      secret: process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET,
+      secureCookie,
+    });
     if (!token) return null;
     return {
       id: token.id as string,
