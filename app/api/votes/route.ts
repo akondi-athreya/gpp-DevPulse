@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { getUserFromSession } from "@/lib/auth";
 import { resolveVoteAction } from "@/lib/utils";
 import { VoteType } from "@/app/generated/prisma/client";
+import { revalidateTag, revalidatePath } from "next/cache";
+import { redis } from "@/lib/redis";
 
 export async function POST(req: NextRequest) {
   // 1. Authenticate user
@@ -47,13 +49,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4. Reject voting on own submission
-    if (submission.authorId === sessionUser.id) {
-      return NextResponse.json(
-        { error: "Cannot vote on your own submission", code: "self_voting_not_allowed" },
-        { status: 403 }
-      );
-    }
+    // 4. Allowed voting on own submission per user request
 
     // 5. Fetch existing vote
     const existingVote = await prisma.vote.findUnique({
@@ -134,6 +130,23 @@ export async function POST(req: NextRequest) {
     const downvoteCount = await prisma.vote.count({
       where: { submissionId, voteType: "DOWNVOTE" },
     });
+
+    // Invalidate/revalidate caches
+    try {
+      revalidateTag("leaderboard", "default");
+      revalidatePath("/leaderboard");
+      revalidatePath("/feed");
+      // Also invalidate submission detail caches and list caches in Redis
+      const cacheKey = `cache:submission:${submissionId}`;
+      await redis.del(cacheKey).catch(() => {});
+
+      const keys = await redis.keys("cache:submissions:*");
+      if (keys && keys.length > 0) {
+        await redis.del(...keys);
+      }
+    } catch (revalError) {
+      console.error("Failed to revalidate cache on voting:", revalError);
+    }
 
     return NextResponse.json({
       data: {

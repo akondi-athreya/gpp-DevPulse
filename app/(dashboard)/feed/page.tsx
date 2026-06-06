@@ -87,7 +87,7 @@ export default async function FeedPage({ searchParams }: FeedPageProps) {
   const totalPages = Math.ceil(total / limit);
   const skip = (page - 1) * limit;
 
-  // 5. Query options (with user specific vote subqueries if authenticated)
+  // 5. Query options (with all votes fetched to calculate net score)
   const rawSubmissions = await prisma.submission.findMany({
     where,
     include: {
@@ -100,14 +100,9 @@ export default async function FeedPage({ searchParams }: FeedPageProps) {
       _count: {
         select: {
           reviews: true,
-          votes: true,
         },
       },
-      votes: {
-        where: {
-          userId: authenticatedUserId || "non-existent-user-id",
-        },
-      },
+      votes: true,
     },
     orderBy,
     skip,
@@ -116,10 +111,14 @@ export default async function FeedPage({ searchParams }: FeedPageProps) {
 
   // 6. Map Prisma data to match final serializable layout
   const submissions = rawSubmissions.map((sub) => {
-    const userVote =
-      authenticatedUserId && sub.votes && sub.votes.length > 0
-        ? sub.votes[0].voteType
-        : null;
+    const userVoteObj = authenticatedUserId
+      ? sub.votes.find((v: any) => v.userId === authenticatedUserId)
+      : null;
+    const userVote = userVoteObj ? userVoteObj.voteType : null;
+
+    const upvotes = sub.votes.filter((v: any) => v.voteType === "UPVOTE").length;
+    const downvotes = sub.votes.filter((v: any) => v.voteType === "DOWNVOTE").length;
+    const netVotes = upvotes - downvotes;
 
     return {
       id: sub.id,
@@ -139,7 +138,7 @@ export default async function FeedPage({ searchParams }: FeedPageProps) {
       },
       _count: {
         reviews: sub._count.reviews,
-        votes: sub._count.votes,
+        votes: netVotes,
       },
       tags: sub.tags.map((st: any) => ({
         id: st.tag.id,

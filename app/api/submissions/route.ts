@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { revalidateTag, revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { redis } from "@/lib/redis";
 import { getUserFromSession } from "@/lib/auth";
@@ -117,18 +118,10 @@ export async function GET(req: NextRequest) {
         _count: {
             select: {
                 reviews: true,
-                votes: true,
             },
         },
+        votes: true,
     };
-
-    if (authenticatedUserId) {
-        includeOptions.votes = {
-            where: {
-                userId: authenticatedUserId,
-            },
-        };
-    }
 
     // 5. Query PostgreSQL database
     try {
@@ -146,10 +139,14 @@ export async function GET(req: NextRequest) {
 
         // Map output fields exactly as required by the spec
         const submissions = rawSubmissions.map((sub) => {
-            const userVote =
-                authenticatedUserId && sub.votes && sub.votes.length > 0
-                    ? (sub.votes[0].voteType as VoteType)
-                    : null;
+            const userVoteObj = authenticatedUserId
+                ? sub.votes.find((v: any) => v.userId === authenticatedUserId)
+                : null;
+            const userVote = userVoteObj ? (userVoteObj.voteType as VoteType) : null;
+
+            const upvotes = sub.votes.filter((v: any) => v.voteType === "UPVOTE").length;
+            const downvotes = sub.votes.filter((v: any) => v.voteType === "DOWNVOTE").length;
+            const netVotes = upvotes - downvotes;
 
             return {
                 id: sub.id,
@@ -169,7 +166,7 @@ export async function GET(req: NextRequest) {
                 },
                 _count: {
                     reviews: sub._count.reviews,
-                    votes: sub._count.votes,
+                    votes: netVotes,
                 },
                 tags: sub.tags.map((st: any) => ({
                     id: st.tag.id,
@@ -275,6 +272,9 @@ export async function POST(req: NextRequest) {
             if (keys && keys.length > 0) {
                 await redis.del(...keys);
             }
+            revalidateTag("leaderboard", "default");
+            revalidatePath("/leaderboard");
+            revalidatePath("/feed");
         } catch (cacheError) {
             console.error("Failed to invalidate cache:", cacheError);
         }

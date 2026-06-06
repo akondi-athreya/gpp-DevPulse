@@ -6,33 +6,21 @@ import { getServerSession } from "@/lib/auth";
 import ReviewList from "@/components/review/review-list";
 import ReviewForm from "@/components/review/review-form";
 import ReviewsSkeleton from "@/components/review/review-skeleton";
+import CodeViewer from "@/components/submission/code-viewer";
 import { Eye, Calendar, Award, Code, CornerDownRight } from "lucide-react";
 
 type ReviewPageProps = {
   params: Promise<{ id: string }>;
 };
 
-// 1. Pre-render the 20 most recent submissions at build time
-export async function generateStaticParams() {
-  try {
-    const submissions = await prisma.submission.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 20,
-      select: { id: true },
-    });
-    return submissions.map((sub) => ({ id: sub.id }));
-  } catch (error) {
-    console.warn("Could not fetch submissions for generateStaticParams during build:", error);
-    return [];
-  }
-}
+export const dynamic = "force-dynamic";
 
 // 2. Reviews Section wrapper for Suspense boundary streaming
 async function ReviewsSection({ submissionId, isAuthor }: { submissionId: string; isAuthor: boolean }) {
   // Fetch reviews directly from DB to allow Suspense to stream this component
   const dbSubmission = await prisma.submission.findUnique({
     where: { id: submissionId },
-    select: {
+    include: {
       reviews: {
         include: {
           reviewer: {
@@ -130,17 +118,7 @@ export default async function ReviewDetailPage({ params }: ReviewPageProps) {
           </div>
 
           {/* Code Viewer */}
-          <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-zinc-950 overflow-hidden shadow-lg">
-            <div className="flex items-center justify-between px-4 py-3 bg-zinc-900 border-b border-zinc-800">
-              <div className="flex items-center gap-2">
-                <Code className="w-4 h-4 text-zinc-400" />
-                <span className="text-xs font-semibold text-zinc-300">{submission.language} Code Snippet</span>
-              </div>
-            </div>
-            <pre className="p-5 overflow-x-auto text-xs leading-relaxed font-mono text-zinc-100 bg-zinc-950">
-              <code>{submission.codeContent}</code>
-            </pre>
-          </div>
+          <CodeViewer codeContent={submission.codeContent} language={submission.language} />
         </div>
 
         {/* Sidebar: Review Submission and Feed */}

@@ -5,7 +5,7 @@ import { redis } from "@/lib/redis";
 import { getUserFromSession } from "@/lib/auth";
 import { createReviewSchema } from "@/lib/validations";
 import { pusherServer } from "@/lib/pusher";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 
 // Named transaction helper as specified in the PRD
 async function createReviewTransaction(
@@ -162,10 +162,22 @@ export async function POST(req: NextRequest) {
       );
     });
 
-    // 7. Caching Invalidation: Delete notification count cache for the author
+    // 7. Caching Invalidation: Delete notification count cache for the author and submissions cache
     try {
       await redis.del(`notif:unread:${submission.authorId}`);
+
+      const detailCacheKey = `cache:submission:${submissionId}`;
+      await redis.del(detailCacheKey).catch(() => {});
+
+      const keys = await redis.keys("cache:submissions:*");
+      if (keys && keys.length > 0) {
+        await redis.del(...keys).catch(() => {});
+      }
+
       revalidatePath(`/review/${submissionId}`);
+      revalidateTag("leaderboard", "default");
+      revalidatePath("/leaderboard");
+      revalidatePath("/feed");
     } catch (cacheErr) {
       console.error("Cache invalidation/revalidation failed:", cacheErr);
     }
@@ -303,7 +315,19 @@ export async function PATCH(req: NextRequest) {
           "new-notification",
           notification
         );
+
+        const detailCacheKey = `cache:submission:${review.submission.id}`;
+        await redis.del(detailCacheKey).catch(() => {});
+
+        const keys = await redis.keys("cache:submissions:*");
+        if (keys && keys.length > 0) {
+          await redis.del(...keys).catch(() => {});
+        }
+
         revalidatePath(`/review/${review.submission.id}`);
+        revalidateTag("leaderboard", "default");
+        revalidatePath("/leaderboard");
+        revalidatePath("/feed");
       } catch (e) {
         console.error(e);
       }

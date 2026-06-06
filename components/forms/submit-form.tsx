@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { SUPPORTED_LANGUAGES } from "@/lib/constants";
-import { Code, AlertCircle, ArrowLeft, Send } from "lucide-react";
+import { AlertCircle, ArrowLeft, Send } from "lucide-react";
 import Link from "next/link";
+import Editor from "@monaco-editor/react";
 
 type TagType = {
   id: string;
@@ -16,6 +17,32 @@ type SubmitFormProps = {
   availableTags: TagType[];
 };
 
+const mapLanguageToMonaco = (lang: string): string => {
+  switch (lang) {
+    case "C++":
+      return "cpp";
+    case "C#":
+      return "csharp";
+    case "HTML":
+      return "html";
+    case "CSS":
+      return "css";
+    case "SQL":
+      return "sql";
+    default:
+      return lang.toLowerCase();
+  }
+};
+
+const EditorLoadingSkeleton = () => (
+  <div className="w-full h-[400px] bg-zinc-950 flex flex-col items-center justify-center border border-zinc-800 rounded-2xl animate-pulse">
+    <div className="flex items-center gap-3 text-zinc-400 text-sm">
+      <div className="w-4 h-4 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin" />
+      <span>Loading IDE editor...</span>
+    </div>
+  </div>
+);
+
 export default function SubmitForm({ availableTags }: SubmitFormProps) {
   const router = useRouter();
   const [title, setTitle] = useState("");
@@ -26,6 +53,23 @@ export default function SubmitForm({ availableTags }: SubmitFormProps) {
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [editorTheme, setEditorTheme] = useState<"vs-dark" | "vs">("vs-dark");
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const initialTheme = mediaQuery.matches ? "vs-dark" : "vs";
+
+    requestAnimationFrame(() => {
+      setEditorTheme(initialTheme);
+    });
+
+    const handleChange = (e: MediaQueryListEvent) => {
+      setEditorTheme(e.matches ? "vs-dark" : "vs");
+    };
+
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
+  }, []);
 
   const handleTagToggle = (tagId: string) => {
     if (selectedTagIds.includes(tagId)) {
@@ -191,17 +235,62 @@ export default function SubmitForm({ availableTags }: SubmitFormProps) {
             <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-2">
               Code Content *
             </label>
-            <textarea
-              required
-              rows={12}
-              value={codeContent}
-              onChange={(e) => setCodeContent(e.target.value)}
-              placeholder="// Paste your code snippet here"
-              className="w-full p-4 rounded-2xl bg-zinc-900 text-zinc-100 border border-zinc-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all font-mono text-xs leading-relaxed resize-y"
-            />
-            <p className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-1.5">
-              Min 10 characters, max 50000 characters. Keep it clean.
-            </p>
+            <div className="overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 focus-within:ring-2 focus-within:ring-indigo-500/50 focus-within:border-indigo-500 transition-all shadow-lg">
+              {/* Editor Header */}
+              <div className="flex items-center justify-between px-4 py-3 bg-zinc-50 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800">
+                <div className="flex items-center gap-2">
+                  {/* macOS window controls */}
+                  <div className="flex gap-1.5 mr-2">
+                    <span className="w-3 h-3 rounded-full bg-rose-500/80"></span>
+                    <span className="w-3 h-3 rounded-full bg-amber-500/80"></span>
+                    <span className="w-3 h-3 rounded-full bg-emerald-500/80"></span>
+                  </div>
+                  <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 font-mono">
+                    main.{mapLanguageToMonaco(language) === "typescript" ? "ts" : mapLanguageToMonaco(language) === "javascript" ? "js" : mapLanguageToMonaco(language)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-semibold uppercase tracking-wider">
+                    {language}
+                  </span>
+                </div>
+              </div>
+
+              {/* Editor Instance */}
+              <div className="p-1 dark:bg-zinc-950 bg-white">
+                <Editor
+                  height="400px"
+                  language={mapLanguageToMonaco(language)}
+                  value={codeContent}
+                  onChange={(val) => setCodeContent(val || "")}
+                  theme={editorTheme}
+                  loading={<EditorLoadingSkeleton />}
+                  options={{
+                    fontSize: 13,
+                    fontFamily: "var(--font-mono)",
+                    minimap: { enabled: false },
+                    lineNumbers: "on",
+                    roundedSelection: true,
+                    scrollBeyondLastLine: false,
+                    readOnly: false,
+                    automaticLayout: true,
+                    cursorBlinking: "smooth",
+                    cursorSmoothCaretAnimation: "on",
+                    padding: { top: 12, bottom: 12 },
+                    wordWrap: "on",
+                    tabSize: 2,
+                  }}
+                />
+              </div>
+            </div>
+            <div className="flex justify-between items-center mt-1.5">
+              <p className="text-[10px] text-zinc-400 dark:text-zinc-500">
+                Min 10 characters, max 50000 characters. Auto-formatted keywords.
+              </p>
+              <p className="text-[10px] text-zinc-400 dark:text-zinc-500 font-mono">
+                {codeContent.length.toLocaleString()} / 50,000 chars
+              </p>
+            </div>
           </div>
 
           {/* Tags Selection */}

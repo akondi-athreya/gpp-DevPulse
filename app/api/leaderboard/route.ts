@@ -45,14 +45,14 @@ export async function GET() {
       const netVotesReceived = upvotes - downvotes;
       const reputationPoints = user.reputation * 1.0;
       const reviewBonus = user._count.reviews * 15;
-      const submissionBonus = user._count.submissions * 10;
+      const submissionBonus = user.submissions.length * 10;
       const voteBonus = netVotesReceived * 2;
 
       // Use the utility function to compute the leaderboard score
       const score = computeLeaderboardScore({
         reputation: user.reputation,
         totalReviewsGiven: user._count.reviews,
-        totalSubmissions: user._count.submissions,
+        totalSubmissions: user.submissions.length,
         netVotesReceived,
       });
 

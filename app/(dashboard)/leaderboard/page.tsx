@@ -46,7 +46,7 @@ export const getCachedLeaderboard = unstable_cache(
       const score = computeLeaderboardScore({
         reputation: user.reputation,
         totalReviewsGiven: user._count.reviews,
-        totalSubmissions: user._count.submissions,
+        totalSubmissions: user.submissions.length,
         netVotesReceived,
       });
 
@@ -62,7 +62,7 @@ export const getCachedLeaderboard = unstable_cache(
         breakdown: {
           reputationPoints: user.reputation * 1.0,
           reviewBonus: user._count.reviews * 15,
-          submissionBonus: user._count.submissions * 10,
+          submissionBonus: user.submissions.length * 10,
           voteBonus: netVotesReceived * 2,
         },
       };

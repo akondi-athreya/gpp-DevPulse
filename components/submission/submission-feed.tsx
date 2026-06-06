@@ -138,13 +138,13 @@ export default function SubmissionFeed({ initialData }: SubmissionFeedProps) {
 
                 if (oldVote === null) {
                   newVote = voteType;
-                  voteCountChange = 1;
+                  voteCountChange = voteType === "UPVOTE" ? 1 : -1;
                 } else if (oldVote === voteType) {
                   newVote = null;
-                  voteCountChange = -1;
+                  voteCountChange = voteType === "UPVOTE" ? -1 : 1;
                 } else {
                   newVote = voteType;
-                  voteCountChange = 0; // voteType flipped, count stays the same (wait, total vote count is sum of votes)
+                  voteCountChange = voteType === "UPVOTE" ? 2 : -2;
                 }
 
                 return {
@@ -152,7 +152,7 @@ export default function SubmissionFeed({ initialData }: SubmissionFeedProps) {
                   userVote: newVote,
                   _count: {
                     ...sub._count,
-                    votes: Math.max(0, sub._count.votes + voteCountChange),
+                    votes: sub._count.votes + voteCountChange,
                   },
                 };
               }),
@@ -167,6 +167,35 @@ export default function SubmissionFeed({ initialData }: SubmissionFeedProps) {
       if (context?.previousData) {
         queryClient.setQueryData(["submissions", filters], context.previousData);
       }
+    },
+    onSuccess: (response) => {
+      if (!response || !response.data) return;
+      const { submissionId, userVote, upvoteCount, downvoteCount } = response.data;
+      const netVotes = upvoteCount - downvoteCount;
+
+      queryClient.setQueryData(["submissions", filters], (old: any) => {
+        if (!old) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page: any) => ({
+            ...page,
+            data: {
+              ...page.data,
+              submissions: page.data.submissions.map((sub: any) => {
+                if (sub.id !== submissionId) return sub;
+                return {
+                  ...sub,
+                  userVote,
+                  _count: {
+                    ...sub._count,
+                    votes: netVotes,
+                  },
+                };
+              }),
+            },
+          })),
+        };
+      });
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["submissions", filters] });
