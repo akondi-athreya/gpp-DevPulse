@@ -58,11 +58,34 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (account?.provider === "github") {
         const githubProfile = profile as any;
         const githubIdStr = githubProfile?.id ? String(githubProfile.id) : null;
-        const email = user.email || githubProfile?.email;
+        let email = user.email || githubProfile?.email;
+        const username = githubProfile?.login || "user";
         
-        if (!email) {
-          return false;
+        if (!email && account.access_token) {
+          try {
+            const emailRes = await fetch("https://api.github.com/user/emails", {
+              headers: {
+                Authorization: `Bearer ${account.access_token}`,
+                "User-Agent": "DevPulse",
+              },
+            });
+            if (emailRes.ok) {
+              const emails = await emailRes.json();
+              const primaryEmail = emails.find((e: any) => e.primary) || emails[0];
+              if (primaryEmail) {
+                email = primaryEmail.email;
+              }
+            }
+          } catch (e) {
+            console.error("Failed to fetch GitHub emails:", e);
+          }
         }
+
+        if (!email) {
+          email = `${username.toLowerCase()}@github.invalid`;
+        }
+
+        user.email = email;
 
         let dbUser = null;
         if (githubIdStr) {
@@ -78,10 +101,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         }
 
         if (!dbUser) {
-          let username = githubProfile?.login || email.split("@")[0] || "user";
+          let uniqueUsername = username;
           let isUnique = false;
           let counter = 0;
-          let candidateUsername = username;
+          let candidateUsername = uniqueUsername;
           while (!isUnique) {
             const existing = await prisma.user.findUnique({
               where: { username: candidateUsername }
@@ -93,13 +116,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               candidateUsername = `${username}${counter}`;
             }
           }
-          username = candidateUsername;
+          uniqueUsername = candidateUsername;
 
           await prisma.user.create({
             data: {
               email,
-              username,
-              displayName: githubProfile?.name || githubProfile?.login || username,
+              username: uniqueUsername,
+              displayName: githubProfile?.name || githubProfile?.login || uniqueUsername,
               avatarUrl: githubProfile?.avatar_url || null,
               githubId: githubIdStr,
               reputation: 0,
